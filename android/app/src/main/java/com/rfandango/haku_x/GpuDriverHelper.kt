@@ -40,6 +40,31 @@ object GpuDriverHelper {
     return isAdreno() || File("/dev/mali0").exists()
   }
 
+  /**
+   * The build's bundled driver (a zip in assets/drivers: the "mali" build packs malisx2) put in use once,
+   * on a Mali (kbase) device still on its system driver, as the GPU driver screen would add it. Once
+   * only (a marker in the app's files): a later choice in that screen, the system driver included,
+   * stands.
+   */
+  fun installBundledOnce(context: Context) {
+    init(context)
+    val marker = File(appContext.filesDir, "bundled_driver_offered")
+    if (marker.exists() || isAdreno() || !File("/dev/mali0").exists()) return
+    marker.writeText("1")
+    if (getActiveDriver() != null) return
+    val name = runCatching { context.assets.list("drivers") }.getOrNull()
+      ?.firstOrNull { it.endsWith(".zip") } ?: return
+    val stored = File(driverStorageDir, name)
+    val copied = runCatching {
+      context.assets.open("drivers/$name").use { i -> stored.outputStream().use { i.copyTo(it) } }
+    }.isSuccess
+    if (!copied || readMetadata(stored) == null) {
+      stored.delete()
+      return
+    }
+    if (!useDriver(stored)) Log.e(TAG, "bundled driver $name: failed to unpack")
+  }
+
   /** A Qualcomm GPU (KGSL): the one Turnip runs on. */
   fun isAdreno(): Boolean = File("/dev/kgsl-3d0").exists()
 

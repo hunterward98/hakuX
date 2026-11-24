@@ -84,6 +84,16 @@ android {
         signingConfig = signingConfigs.getByName("release")
       }
     }
+    // The Mali build (hunterward98/halo2-405m): release, installed beside the official app, with a
+    // custom Vulkan driver packed (src/mali/assets/drivers/*.zip, copied in by the build script:
+    // malisx2, MIT) that GpuDriverHelper.installBundledOnce puts in use on a Mali device.
+    create("mali") {
+      initWith(getByName("release"))
+      applicationIdSuffix = ".mali"
+      versionNameSuffix = "-mali.1"
+      resValue("string", "app_name", "hakuX Mali")
+      matchingFallbacks += listOf("release")
+    }
   }
 
 

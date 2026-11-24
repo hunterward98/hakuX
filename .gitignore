@@ -50,3 +50,6 @@ profile-out-*/
 
 # Shared build/device lock between sessions (not versioned)
 /.device.lock
+
+# The Mali build's bundled driver (copied in at build time)
+/android/app/src/mali/assets/drivers/
