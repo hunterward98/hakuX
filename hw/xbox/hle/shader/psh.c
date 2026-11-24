@@ -15,6 +15,7 @@
  *   0x40 complement v1, 0x20 complement r0). Without one, the output is r0.
  */
 #include <stdarg.h>
+#include <stdlib.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -127,17 +128,33 @@ static const char *dst(unsigned r)
     }
 }
 
+/* HAKUX_HLE_FP16=1 (via debug.hakux.env, read once): the register combiners'
+ * temporaries in mediump (RelaxedPrecision: FP16 on Mali Bifrost/Valhall, which
+ * runs it at twice the FP32 rate and with half the registers). The NV2A's
+ * combiners compute in ~9-bit signed fixed point, so FP16's 11 significant bits
+ * hold every value they can; coordinates, dot products and samplers stay highp.
+ * The GLSL text changes, so the SPIR-V cache (keyed by its hash) keeps both. */
+static const char *mp(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("HAKUX_HLE_FP16");
+        on = e && e[0] == '1';
+    }
+    return on ? "mediump " : "";
+}
+
 static void stage(Buf *b, const HlePshKey *k, unsigned s)
 {
     uint32_t ri = k->rgb_in[s], ro = k->rgb_out[s], ai = k->alpha_in[s], ao = k->alpha_out[s];
     unsigned c0 = (k->count & 0x1000) ? s : 0, c1 = 8 + ((k->count & 0x10000) ? s : 0);
     put(b, "  { /* combiner stage %u */\n"
-           "    vec4 C0 = col(pc.psc[%u]), C1 = col(pc.psc[%u]);\n", s, c0, c1);
+           "    %svec4 C0 = col(pc.psc[%u]), C1 = col(pc.psc[%u]);\n", s, mp(), c0, c1);
     static const char k_v[4] = { 'A', 'B', 'C', 'D' };
     for (unsigned i = 0; i < 4; i++) {
-        put(b, "    vec3 %c = ", k_v[i]);
+        put(b, "    %svec3 %c = ", mp(), k_v[i]);
         in_expr(b, (ri >> (24 - 8 * i)) & 0xFF, false, false);
-        put(b, ";\n    float %ca = ", k_v[i]);
+        put(b, ";\n    %sfloat %ca = ", mp(), k_v[i]);
         in_expr(b, (ai >> (24 - 8 * i)) & 0xFF, true, false);
         put(b, ";\n");
     }
@@ -145,10 +162,10 @@ static void stage(Buf *b, const HlePshKey *k, unsigned s)
      * 0xFF >> 1 = 0x7F, clear, and a bias's 0.5 is 0x80, set (b->half) */
     put(b, "    bool mx = %s;\n", (k->count & 0x100) ? "r0.a > 0.5"
                                                    : "(uint(r0.a * 255.0) & 1u) == 1u");
-    put(b, "    vec3 ab = %s, cd = %s;\n", (ro & 0x2000) ? "vec3(dot(A, B))" : "A * B",
+    put(b, "    %svec3 ab = %s, cd = %s;\n", mp(), (ro & 0x2000) ? "vec3(dot(A, B))" : "A * B",
         (ro & 0x1000) ? "vec3(dot(C, D))" : "C * D");
-    put(b, "    vec3 ms = %s;\n", (ro & 0x4000) ? "mx ? cd : ab" : "ab + cd");
-    put(b, "    float aab = Aa * Ba, acd = Ca * Da, ams = %s;\n",
+    put(b, "    %svec3 ms = %s;\n", mp(), (ro & 0x4000) ? "mx ? cd : ab" : "ab + cd");
+    put(b, "    %sfloat aab = Aa * Ba, acd = Ca * Da, ams = %s;\n", mp(),
         (ao & 0x4000) ? "mx ? acd : aab" : "aab + acd");
     char e[64];
     static const char *const k_rv[3] = { "ab", "cd", "ms" };
@@ -191,7 +208,7 @@ static void stage(Buf *b, const HlePshKey *k, unsigned s)
 static void final_combiner(Buf *b, const HlePshKey *k)
 {
     uint32_t abcd = k->final_abcd, efg = k->final_efg;
-    put(b, "  vec4 outc;\n");
+    put(b, "  %svec4 outc;\n", mp());
     if (!abcd && !efg) {
         /* No final combiner in the shader: the one D3D's fog setters push
          * (Otogi 0xfc362 / 0xfc3ce): A = fog.a, B = r0 or, with
@@ -201,24 +218,24 @@ static void final_combiner(Buf *b, const HlePshKey *k)
             k->specular ? "v1.rgb + r0.rgb" : "r0.rgb");
         return;
     }
-    put(b, "  {\n    vec4 C0 = col(pc.psc[16]), C1 = col(pc.psc[17]);\n");
-    put(b, "    vec3 E = clamp(");
+    put(b, "  {\n    %svec4 C0 = col(pc.psc[16]), C1 = col(pc.psc[17]);\n", mp());
+    put(b, "    %svec3 E = clamp(", mp());
     in_expr(b, (efg >> 24) & 0xFF, false, false);
-    put(b, ", 0.0, 1.0);\n    vec3 F = clamp(");
+    put(b, ", 0.0, 1.0);\n    %svec3 F = clamp(", mp());
     in_expr(b, (efg >> 16) & 0xFF, false, false);
-    put(b, ", 0.0, 1.0);\n    vec4 efp = vec4(E * F, 0.0);\n");
-    put(b, "    vec4 v1r0 = vec4(%s + %s, 0.0);\n",
+    put(b, ", 0.0, 1.0);\n    %svec4 efp = vec4(E * F, 0.0);\n", mp());
+    put(b, "    %svec4 v1r0 = vec4(%s + %s, 0.0);\n", mp(),
         (efg & 0x40) ? "(1.0 - v1.rgb)" : "v1.rgb", (efg & 0x20) ? "(1.0 - r0.rgb)" : "r0.rgb");
     if (efg & 0x80) {
         put(b, "    v1r0 = clamp(v1r0, 0.0, 1.0);\n");
     }
     static const char k_v[4] = { 'A', 'B', 'C', 'D' };
     for (unsigned i = 0; i < 4; i++) {
-        put(b, "    vec3 %c = clamp(", k_v[i]);
+        put(b, "    %svec3 %c = clamp(", mp(), k_v[i]);
         in_expr(b, (abcd >> (24 - 8 * i)) & 0xFF, false, true);
         put(b, ", 0.0, 1.0);\n");
     }
-    put(b, "    float G = clamp(");
+    put(b, "    %sfloat G = clamp(", mp());
     in_expr(b, (efg >> 8) & 0xFF, true, true);
     put(b, ", 0.0, 1.0);\n"
            "    outc = vec4(A * B + (1.0 - A) * C + D, G);\n  }\n");
@@ -403,8 +420,8 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
     if (k->fog >= 2) {
         put(&b, "  fogf = isnan(fogf) ? 1.0 : clamp(fogf, 0.0, 1.0);\n");
     }
-    put(&b, "  vec4 fogr = vec4(col(pc.fog_color).rgb, fogf);\n"
-            "  float dot1 = 0.0, dot2 = 0.0, dot3 = 0.0;\n%s",
+    put(&b, "  %svec4 fogr = vec4(col(pc.fog_color).rgb, fogf);\n"
+            "  float dot1 = 0.0, dot2 = 0.0, dot3 = 0.0;\n%s", mp(),
         k->debug == 17 ? "  vec4 shdbg = vec4(0.0, 0.0, 0.0, 1.0);\n" : "");
     for (unsigned s = 0; s < 4; s++) {
         unsigned m = (k->tex_modes >> (5 * s)) & 0x1F;
@@ -555,8 +572,8 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
         }
         alpha_kill(&b, k, s, m);
     }
-    put(&b, "  vec4 r0 = vec4(0.0, 0.0, 0.0, t0.a), r1 = vec4(0.0);\n"
-            "  vec4 t0s = t0, t3s = t3;\n");      /* as sampled (debug views 15, 16) */
+    put(&b, "  %svec4 r0 = vec4(0.0, 0.0, 0.0, t0.a), r1 = vec4(0.0);\n"
+            "  vec4 t0s = t0, t3s = t3;\n", mp()); /* as sampled (debug views 15, 16) */
     unsigned n = k->count & 0xFF;
     for (unsigned s = 0; s < n && s < 8; s++) {
         stage(&b, k, s);
