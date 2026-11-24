@@ -221,7 +221,10 @@ static const HleQuirk k_quirks[] = {
      * vertex shader ran 7x per index in Halo 2's Cairo intro (position
      * shading counters 0, non-fragment threads 33M/s); pb/pbdraw.c */
     { HLE_QUIRK_VCOMPACT, "vcompact", mali_not_blob },
-    { HLE_QUIRK_SNAP_REUSE, "snapreuse", NULL },
+    /* malisx2 0.6.1, Mali-G52 MP2 (2026-11-24): Halo 2's Cairo intro, GPU 784 -> ~530 ms/s, min fps
+     * 25.3 -> 28.8; its heat haze, plasma, beam rifle and scope dimming drew as before. A tiler pays
+     * most for a pass split; Arm's own driver untested, so off there. */
+    { HLE_QUIRK_SNAP_REUSE, "snapreuse", mali_not_blob },
 };
 
 static uint32_t g_defaults;

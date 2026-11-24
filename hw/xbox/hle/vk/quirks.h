@@ -112,7 +112,7 @@ enum {
      * the target (Halo 2's Cairo intro: ~25 a frame). With this, a run of such
      * draws with nothing else drawn, cleared or copied in between shares the
      * first one's copy (they don't see each other, as overlapping effects of
-     * one batch). Off by default; debug.hakux.quirks +snapreuse. */
+     * one batch). On for Mali drivers that aren't Arm's (vk/quirks.c). */
     HLE_QUIRK_SNAP_REUSE = 1u << 16,
 };
 

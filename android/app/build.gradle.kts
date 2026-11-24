@@ -90,7 +90,7 @@ android {
     create("mali") {
       initWith(getByName("release"))
       applicationIdSuffix = ".mali"
-      versionNameSuffix = "-mali.1"
+      versionNameSuffix = "-mali.2"
       resValue("string", "app_name", "hakuX Mali")
       matchingFallbacks += listOf("release")
     }
