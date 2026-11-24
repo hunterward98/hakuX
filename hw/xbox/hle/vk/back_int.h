@@ -173,6 +173,7 @@ void hle_draw_rs_brief(uint32_t out[9]);
 bool hle_draw_snap_needed(const HleCmdDraw *c, uint32_t rt_id);
 void hle_draw_snap(VkCommandBuffer cb, HleVkSurf *rt);
 void hle_draw_snap_end(void);
+bool hle_draw_snap_reuse(uint32_t rt_id);
 /* Draw c tests depth EQUAL without writing it: HLE_FB_ZEQ24 / ZEQ16
  * (shader/ff.h) by depth buffer ds_id's step, its fragments in front of the
  * stored depth discarded by reading it (set 2, binding 1); 0 = not. */

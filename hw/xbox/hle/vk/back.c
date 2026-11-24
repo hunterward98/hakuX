@@ -680,8 +680,18 @@ static void draw_nopass(void)
     }
 }
 
+/* HLE_QUIRK_SNAP_REUSE: the target copy of the last draw that sampled its
+ * target is still current (only such draws since: no pass end, other draw,
+ * clear, copy or target change). */
+static struct {
+    bool valid;
+    uint32_t rt;
+    uint64_t made, reused;
+} g_sreuse;
+
 static void close_pass_why(unsigned why)
 {
+    g_sreuse.valid = false;
     hle_back_breaks++;
     if (!g_back.pass_open && g_back.pend_clear) {
         open_pass(false);                     /* clear-only pass: loadOp=CLEAR */
@@ -2424,6 +2434,7 @@ static void dispatch(const HleCmdHdr *h)
         break;
     default:
         hle_back_breaks++;
+        g_sreuse.valid = false;
         break;
     }
     switch (h->op) {
@@ -2505,9 +2516,20 @@ static void dispatch(const HleCmdHdr *h)
         /* combiner stages reading the target at their own coordinates: a
          * copy of it, made outside the pass */
         bool snap = hle_draw_snap_needed(p, g_back.rt);
-        if (snap) {
+        if (snap && hle_quirk(HLE_QUIRK_SNAP_REUSE) && g_sreuse.valid && g_sreuse.rt == g_back.rt &&
+            hle_draw_snap_reuse(g_back.rt)) {
+            if ((++g_sreuse.reused & 0xFFF) == 1) {
+                hle_log("hakuX-hle-back", "snapreuse: %llu target copies reused, %llu made",
+                        (unsigned long long)g_sreuse.reused, (unsigned long long)g_sreuse.made);
+            }
+        } else if (snap) {
             close_pass_why(PE_COPY);
             hle_draw_snap(cb_get(), hle_surf_get(g_back.rt));
+            g_sreuse.valid = true;
+            g_sreuse.rt = g_back.rt;
+            g_sreuse.made++;
+        } else {
+            g_sreuse.valid = false;
         }
         if (g_hle_gpucut == 3) {
             if (!g_back.pass_open) {

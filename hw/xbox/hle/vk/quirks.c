@@ -221,6 +221,7 @@ static const HleQuirk k_quirks[] = {
      * vertex shader ran 7x per index in Halo 2's Cairo intro (position
      * shading counters 0, non-fragment threads 33M/s); pb/pbdraw.c */
     { HLE_QUIRK_VCOMPACT, "vcompact", mali_not_blob },
+    { HLE_QUIRK_SNAP_REUSE, "snapreuse", NULL },
 };
 
 static uint32_t g_defaults;

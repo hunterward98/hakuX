@@ -1441,6 +1441,8 @@ static struct {
 static unsigned g_nsnap;
 static int g_snap_cur = -1;             /* the copy of target g_snap_rt the next draw samples */
 static uint32_t g_snap_rt;
+static int g_snap_last = -1;            /* the copy hle_draw_snap made last, of target g_snap_last_rt */
+static uint32_t g_snap_last_rt;
 
 static bool samples(unsigned mode)
 {
@@ -1538,6 +1540,8 @@ void hle_draw_snap(VkCommandBuffer cb, HleVkSurf *rt)
     int i = snap_get(rt);
     g_snap_cur = i;
     g_snap_rt = rt->id;
+    g_snap_last = i;
+    g_snap_last_rt = rt->id;
     if (i < 0) {
         return;
     }
@@ -1558,6 +1562,18 @@ void hle_draw_snap(VkCommandBuffer cb, HleVkSurf *rt)
 void hle_draw_snap_end(void)
 {
     g_snap_cur = -1;
+}
+
+/* HLE_QUIRK_SNAP_REUSE: the next draw samples the copy hle_draw_snap made of
+ * target rt_id last (the back end knows nothing touched rt since). */
+bool hle_draw_snap_reuse(uint32_t rt_id)
+{
+    if (g_snap_last < 0 || g_snap_last_rt != rt_id) {
+        return false;
+    }
+    g_snap_cur = g_snap_last;
+    g_snap_rt = rt_id;
+    return true;
 }
 
 /* A texture object that becomes a render-target surface: its texels now

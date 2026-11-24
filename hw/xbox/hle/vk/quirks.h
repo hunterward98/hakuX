@@ -105,6 +105,15 @@ enum {
      * and its Cairo Station intro shaded 33 million vertices a second for
      * ~4.5 million indices (hardware counters, malicnt). */
     HLE_QUIRK_VCOMPACT = 1u << 15,
+    /* A draw whose combiners sample its own colour target at other pixels
+     * (Halo 2's heat haze, refraction, camouflage) reads a copy made just
+     * before it (vk/draw.c hle_draw_snap): the pass ends, the whole target is
+     * copied, the pass reopens. On a tiler each costs a store and a reload of
+     * the target (Halo 2's Cairo intro: ~25 a frame). With this, a run of such
+     * draws with nothing else drawn, cleared or copied in between shares the
+     * first one's copy (they don't see each other, as overlapping effects of
+     * one batch). Off by default; debug.hakux.quirks +snapreuse. */
+    HLE_QUIRK_SNAP_REUSE = 1u << 16,
 };
 
 extern uint32_t g_hle_quirks;
