@@ -1,5 +1,7 @@
 package com.rfandango.haku_x.data
 
+import com.rfandango.haku_x.BuildConfig
+
 import android.content.Context
 import android.content.res.AssetManager
 import android.util.Log
@@ -181,8 +183,14 @@ class ModChoices(context: Context, private val game: String) {
   private val file = File(context.filesDir, FILE)
   private val app = context.applicationContext
 
-  fun mod(id: String) = read().optBoolean("$game/mod/$id", false)
-  fun setMod(id: String, on: Boolean) = write("$game/mod/$id", on)
+  /** A mod the user hasn't chosen for or against: on when the build lists it (BuildConfig.DEFAULT_MODS,
+   *  "<game>/mod/<id>" comma-separated: the Mali build turns Halo 2's idle frame limiter on). */
+  fun mod(id: String): Boolean {
+    val key = "$game/mod/$id"
+    val o = read()
+    return if (o.has(key)) o.optBoolean(key, false) else key in BuildConfig.DEFAULT_MODS.split(',')
+  }
+  fun setMod(id: String, on: Boolean) = write("$game/mod/$id", on, keepFalse = true)
   fun cheat(name: String) = read().optBoolean("$game/cheat/$name", false)
   fun setCheat(name: String, on: Boolean) = write("$game/cheat/$name", on)
 
@@ -199,10 +207,10 @@ class ModChoices(context: Context, private val game: String) {
     }
   }
 
-  private fun write(key: String, on: Boolean) {
+  private fun write(key: String, on: Boolean, keepFalse: Boolean = false) {
     synchronized(LOCK) {
       val o = read()
-      if (on) o.put(key, true) else o.remove(key)
+      if (on) o.put(key, true) else if (keepFalse) o.put(key, false) else o.remove(key)
       val tmp = File(file.parentFile, "$FILE.${android.os.Process.myPid()}.tmp")
       tmp.writeText(o.toString())
       tmp.renameTo(file)

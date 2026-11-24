@@ -12,6 +12,9 @@ A build of this fork for Arm Mali GPUs, made for Halo 2 on the Anbernic RG405M (
 - `snapreuse` quirk (vk/back.c, vk/draw.c): consecutive draws sampling their own colour target share one
   copy of it (on a tiler each copy ends the pass). Halo 2 Cairo intro: GPU 784 -> ~530 ms/s, min 25.3 -> 28.8 fps;
   its heat haze, plasma, beam rifle and scope dimming checked visually. On for Mali drivers that aren't Arm's.
+- mods/4D530064.3/idlelimiter (tools/mods/h2_idle_limiter.py): Halo 2's limiter spin -> KeDelayExecutionThread
+  0.5 ms per check (cave at 0x10CC0, as the 60/120 fps mods: not with them). On by default in the Mali build
+  (BuildConfig.DEFAULT_MODS; a choice in Mods & cheats is kept). Cutscene stutters 22-24/min -> 3-7/min.
 - `HAKUX_HLE_FP16=1` (psh.c): combiner temporaries in mediump. No measurable gain on malisx2; off.
 - Custom drivers load on Mali (kbase) since ce45c4cf (after 1.3.0).
 

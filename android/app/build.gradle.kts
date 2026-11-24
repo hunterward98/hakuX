@@ -33,6 +33,8 @@ android {
 
     versionCode = 9
     versionName = "1.3.0"
+    // mods on until the user chooses otherwise ("<game>/mod/<id>", comma-separated; data/Mods.kt)
+    buildConfigField("String", "DEFAULT_MODS", "\"\"")
 
     ndk {
       abiFilters += listOf("arm64-v8a")
@@ -90,7 +92,8 @@ android {
     create("mali") {
       initWith(getByName("release"))
       applicationIdSuffix = ".mali"
-      versionNameSuffix = "-mali.2"
+      versionNameSuffix = "-mali.3"
+      buildConfigField("String", "DEFAULT_MODS", "\"4D530064.3/mod/idlelimiter\"")
       resValue("string", "app_name", "hakuX Mali")
       matchingFallbacks += listOf("release")
     }
