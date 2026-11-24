@@ -138,6 +138,13 @@ static bool no_timestamps_on(const HleDriver *d)
     return mali_g615_blob(d) || mali_g52_arm(d);
 }
 
+/* A Mali driver that isn't Arm's (malisx2, PanVK): no index-driven vertex
+ * shading on Bifrost's job manager, so a draw shades its whole index range. */
+static bool mali_not_blob(const HleDriver *d)
+{
+    return mali(d) && !arm_blob(d);
+}
+
 /* Seen on (driver, version, what showed it). */
 static const HleQuirk k_quirks[] = {
     /* Adreno 840 stock driver 0x8034a02c: Forza's menu text picks its glyph
@@ -210,6 +217,10 @@ static const HleQuirk k_quirks[] = {
      * releases between are untested, so on for Arm's driver before r40;
      * HAKUX_HLE_QUIRKS=+no_sem_wait tries it elsewhere. */
     { HLE_QUIRK_NO_SEM_WAIT, "no_sem_wait", arm_before_r40 },
+    /* malisx2 0.6.1 on a Mali-G52 MP2 (Anbernic RG405M, 2026-11-23): the
+     * vertex shader ran 7x per index in Halo 2's Cairo intro (position
+     * shading counters 0, non-fragment threads 33M/s); pb/pbdraw.c */
+    { HLE_QUIRK_VCOMPACT, "vcompact", mali_not_blob },
 };
 
 static uint32_t g_defaults;

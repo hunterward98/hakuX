@@ -96,6 +96,15 @@ enum {
      * Arm's driver before r40, whose r34p0 lost the device this way on a
      * Mali-G52 (mid-game, across titles) and on a Mali-G57 (JSRF). */
     HLE_QUIRK_NO_SEM_WAIT = 1u << 14,
+    /* Indexed draws whose indices use a few vertices of a large range are
+     * compacted: the vertices they use copied to the arena in order of first
+     * use, the indices renumbered (pb/pbdraw.c draw_compact). A Bifrost Mali
+     * driver without index-driven vertex shading (malisx2 0.6 on a Mali-G52,
+     * job manager) runs the vertex shader over every vertex of [min, max]:
+     * Halo 2's level geometry indexes a few vertices of large shared arrays,
+     * and its Cairo Station intro shaded 33 million vertices a second for
+     * ~4.5 million indices (hardware counters, malicnt). */
+    HLE_QUIRK_VCOMPACT = 1u << 15,
 };
 
 extern uint32_t g_hle_quirks;

@@ -234,6 +234,7 @@ static struct {
     bool blk_ok, blk_ff;
     uint64_t blk_reused;
     uint64_t vb_place, vb_copied;       /* vertex ranges read in place, copied */
+    uint64_t vcompact, vcompact_saved;  /* draws compacted, range vertices not shaded (VCOMPACT) */
     uint64_t seq_draws;                 /* DRAW_ARRAYS of one run in order, drawn without indices */
     uint64_t bnd_kicks;                 /* submissions closed for a barrier's waiter */
     uint64_t sent[SENT_SLOTS];              /* program hashes the back end has (a set; 0 free) */
@@ -3477,6 +3478,96 @@ static bool vb_realign(HleCmdDraw *d, unsigned b, const uint8_t *src, uint32_t f
     return true;
 }
 
+/* HLE_QUIRK_VCOMPACT: an indexed draw that uses under half the vertices of
+ * its range [lo, hi] (Halo 2's level geometry: a few vertices of a large
+ * shared array) gets just those vertices, copied to the arena in the order
+ * the indices first use them, and indices renumbered to match. A driver
+ * without index-driven vertex shading shades the whole range of a draw;
+ * this way it shades the vertices the draw uses. False: not worth it (or not
+ * possible), the caller goes on as before; true: drawn or skipped. */
+static bool draw_compact(HleCmdDraw *d, uint32_t n, uint32_t lo, uint32_t hi,
+                         const uint32_t *base, const uint32_t *end)
+{
+    static uint32_t gen[0x10000], stamp;
+    static uint16_t map[0x10000], uses[0x10000];
+    if (hi - lo + 1 < 2 * n + 64 || hle_quirk(HLE_QUIRK_VB_ALIGN)) {
+        return false;
+    }
+    for (unsigned b = 0; b < d->nbind; b++) {
+        if (d->bind_stride[b] && end[b] > d->bind_stride[b]) {
+            return false;               /* attributes past the stride: overlapping vertices */
+        }
+    }
+    if (++stamp == 0) {
+        memset(gen, 0, sizeof(gen));
+        stamp = 1;
+    }
+    uint32_t u = 0;
+    for (uint32_t i = 0; i < n; i++) {
+        uint32_t k = g_pd.idx[i] - lo;
+        if (gen[k] != stamp) {
+            gen[k] = stamp;
+            map[k] = (uint16_t)u;
+            uses[u++] = (uint16_t)k;
+        }
+        g_pd.idx16[i] = map[k];
+    }
+    if (2 * u > hi - lo + 1) {
+        return false;
+    }
+    for (unsigned b = 0; b < d->nbind; b++) {
+        uint32_t st = d->bind_stride[b];
+        uint32_t from = base[b] + (st ? lo * st : 0);
+        uint32_t len = st ? (hi - lo) * st + MAX(end[b], 1u) : end[b];
+        coh_pend_wait(from, len);
+        const uint8_t *src = hle_pa_ptr(from, len);
+        uint8_t *dst;
+        uint32_t off = src ? arena(st ? u * st : MAX(len, 4u), &dst) : HLE_ARENA_FULL;
+        if (off == HLE_ARENA_FULL) {
+            skip(SK_DRAW_ARRAYS_ARENA);
+            return true;
+        }
+        if (recopied(from, len)) {
+            hle_barrier_arm_copied(from, len);
+        }
+        if (st) {
+            const uint32_t e = MAX(end[b], 1u);
+            for (uint32_t j = 0; j < u; j++) {
+                memcpy(dst + j * st, src + (uint32_t)uses[j] * st, e);
+            }
+        } else {
+            memcpy(dst, src, len);
+        }
+        d->bind_off[b] = off;
+        g_pd.vb_copied++;
+    }
+    uint32_t pt = g_pd.prim;
+    uint32_t cnt = hle_draw_prim_count(pt, n);
+    uint8_t *ib;
+    uint32_t ib_off = cnt ? arena_idx(2 * cnt + 4, &ib) : HLE_ARENA_FULL;
+    if (ib_off == HLE_ARENA_FULL) {
+        skip(SK_DRAW_ARRAYS_ARENA2);
+        return true;
+    }
+    if (pt == NV2A_PRIM_QUADS || pt == NV2A_PRIM_LINE_LOOP) {
+        hle_draw_prim_indices(pt, g_pd.idx16, n, 0, (uint16_t *)ib);
+    } else {
+        memcpy(ib, g_pd.idx16, 2 * (size_t)n);
+    }
+    d->prim = hle_draw_prim_topology(pt);
+    d->count = cnt;
+    d->ib_off = ib_off;
+    g_pd.vcompact++;
+    g_pd.vcompact_saved += (hi - lo + 1) - u;
+    if ((g_pd.vcompact & 0x3FFF) == 1) {
+        hle_log("hakuX-hle-pb", "vcompact: %llu draws compacted, %llu range vertices not shaded "
+                "(this one: %u of %u)", (unsigned long long)g_pd.vcompact,
+                (unsigned long long)g_pd.vcompact_saved, u, hi - lo + 1);
+    }
+    emit(d);
+    return true;
+}
+
 /* The vertex arrays the indices reach, read in place or copied to the
  * arena, the indices converted for the primitive and rebased. */
 static void draw_arrays(void)
@@ -3527,6 +3618,9 @@ static void draw_arrays(void)
         }
         end[b] = MAX(end[b], pa - base[b] + attr_bytes(fmt));
         d.attr[a] = (fmt & 0xFF) | b << 8 | (pa - base[b]) << 16;
+    }
+    if (hle_quirk(HLE_QUIRK_VCOMPACT) && draw_compact(&d, n, lo, hi, base, end)) {
+        return;
     }
     for (unsigned b = 0; b < d.nbind; b++) {
         uint32_t st = d.bind_stride[b];
